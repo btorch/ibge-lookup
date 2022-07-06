@@ -114,8 +114,10 @@ def collect_data(db, url, cnaes):
     :param cnaes: List of CNAEs
     :return:
     """
-    for name in estados.keys():
-        temp_url = url.replace("LOCATION", str(estados[name]))
+    main_holder = []
+    temp_holder = []
+    for estado in estados.keys():
+        temp_url = url.replace("LOCATION", str(estados[estado]))
         x = 0
         y = 50
         while x <= len(cnaes):
@@ -131,21 +133,12 @@ def collect_data(db, url, cnaes):
                 for ibge in ibge_data:
                     db_name = databases[ibge['id']]
                     for resultado in ibge['resultados']:
-                        for classificacao in resultado['classificacoes']:
-                            if '12762' in classificacao['id']:
-                                for cat_id, cat_txt in classificacao['categoria'].items():
-                                    cnae_id = cat_id
-                                    cnae_txt = cat_txt
+                        for cat_id, cat_txt in resultado['classificacoes'][0]['categoria'].items():
+                            cnae_id = cat_id
+                            cnae_txt = cat_txt
                         for serie in resultado['series']:
                             for year, data in serie['serie']:
-
-
-
-
-
-
-
-
+                                main_holder.append([estado,cnae_id,cnae_txt,year,data])
 
 
 
