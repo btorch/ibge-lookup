@@ -57,7 +57,7 @@ estados = {
     "Distrito Federal": 53
 }
 
-databases = {
+tables = {
     '2585': 'ibge_empresas',
     '3875': 'ibge_pessoal_cns',
     '3876': 'ibge_pessoal_sns',
@@ -69,7 +69,7 @@ def get_url(urlfile):
     """
     Read the first line from the file which contains the API URL generated
     by the servicodados.ibge.gov.br site. If you would like more periods (years)
-    please change the URL to contain the years needed separated by comma.
+    please change the URL to contain the years separated by comma.
     Do not request more than 3-4 years at a time.
     :param urlfile: Location of the file with the URL
     :return: The URL to be used
@@ -107,45 +107,36 @@ def get_cnaes(cnaefile):
 
 def collect_data(db, url, cnaes):
     """
-    Retrieve data from IBGE API endpoint and add it to the
-    proper database table.
+    Retrieve data from IBGE API endpoint, add it to a
+    list holder. Pass the list over to the store function
+    on each state pass to be inserted into table.
     :param db: Database Object
     :param url: URL Endpoint
     :param cnaes: List of CNAEs
     :return:
     """
-    main_holder = []
-    temp_holder = []
     for estado in estados.keys():
         temp_url = url.replace("LOCATION", str(estados[estado]))
         x = 0
         y = 50
+        main_holder = []
         while x <= len(cnaes):
             new_url = temp_url.replace("[CNAE]",str(cnaes[x:y]).replace(" ",""))
             x += 50
             y += 50
-
             try:
                 response = requests.get(new_url)
                 response.raise_for_status()
-
                 ibge_data = response.json()
                 for ibge in ibge_data:
-                    db_name = databases[ibge['id']]
+                    #tb_name = tables[ibge['id']]
                     for resultado in ibge['resultados']:
-                        for cat_id, cat_txt in resultado['classificacoes'][0]['categoria'].items():
-                            cnae_id = cat_id
-                            cnae_txt = cat_txt
+                        cnae_id, cnae_txt = next(iter(resultado['classificacoes'][0]['categoria'].items()))
                         for serie in resultado['series']:
-                            for year, data in serie['serie']:
-                                main_holder.append([estado,cnae_id,cnae_txt,year,data])
-
-
-
-
-                empresas_data = ibge_data[0]['resultados'][0]['series'][0]['serie']
-                pessoal_data = ibge_data[1]['resultados'][0]['series'][0]['serie']
-                salarios_data = ibge_data[2]['resultados'][0]['series'][0]['serie']
+                            for year, data in serie['serie'].items():
+                                if data == '...':
+                                    data = '0'
+                                main_holder.append([ibge['id'],estado,cnae_id,cnae_txt,year,data])
 
             except requests.exceptions.HTTPError as errh:
                 print ("Http Error:",errh)
@@ -156,11 +147,14 @@ def collect_data(db, url, cnaes):
             except requests.exceptions.RequestException as err:
                 print("OOps: Something Else", err)
 
+        print(main_holder)
+        store_data(db, main_holder)
 
 
 
 
-def storeold_data(url, dbfile):
+
+def store_data(db, data):
     """
     Parsing the results retrieved from IBGE API
     :param url_list: list of URLs to request,
