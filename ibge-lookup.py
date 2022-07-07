@@ -123,7 +123,7 @@ def collect_data(db, url, cnaes):
         x = 0
         y = 50
         main_holder = []
-        while x <= len(cnaes):
+        while x < len(cnaes):
             new_url = temp_url.replace("[CNAE]", str(cnaes[x:y]).replace(" ", ""))
             x += 50
             y += 50
@@ -141,7 +141,7 @@ def collect_data(db, url, cnaes):
                                 main_holder.append([ibge['id'], estado, cnae_id, cnae_txt, year, data])
 
             except requests.exceptions.HTTPError as errh:
-                print("Http Error:", errh)
+                print("Http Error:", errh.decode('utf8'))
             except requests.exceptions.ConnectionError as errc:
                 print("Error Connecting:", errc)
             except requests.exceptions.Timeout as errt:
@@ -298,9 +298,9 @@ def main():
     """
     parser = argparse.ArgumentParser(description='Process IBGE data.')
     parser.add_argument('--urlfile', dest='urlfile', action='store', required=True,
-                        help='File containing the url for the requests', default='url.txt')
+                        help='File containing the url for the requests [Required]', default='url.txt')
     parser.add_argument('--cnaefile', dest='cnaefile', action='store', required=True,
-                        help='File containing CNAE IDs', default='cnae.txt')
+                        help='File containing CNAE IDs [Required]', default='cnae.txt')
     parser.add_argument('--dbname', dest='dbname', action='store',
                         help='Name of SQLite file', default='ibge.db')
 
