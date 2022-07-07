@@ -18,7 +18,7 @@
 # Email: btorch@zeroaccess.org
 # Created: June, 2022
 # Contributors: None
-# Compatibility: Python 3.6 and beyond
+# Compatibility: Python 3.6 and beyond, recommended Python 3.9
 #
 
 import sqlite3
