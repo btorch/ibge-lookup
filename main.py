@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 # Copyright (c) 2022 Marcelo Martins
 #
@@ -25,6 +25,7 @@ import sqlite3
 import argparse
 from pathlib import Path
 import requests
+import sys
 
 
 estados = {
@@ -64,6 +65,7 @@ tables = {
     '3879': 'ibge_salario_cns',
     '3880': 'ibge_salario_sns'
 }
+
 
 def get_url(urlfile):
     """
@@ -113,15 +115,16 @@ def collect_data(db, url, cnaes):
     :param db: Database Object
     :param url: URL Endpoint
     :param cnaes: List of CNAEs
-    :return:
+    :return: None
     """
+    special_data = ['...', '..', 'X', '-']
     for estado in estados.keys():
         temp_url = url.replace("LOCATION", str(estados[estado]))
         x = 0
         y = 50
         main_holder = []
         while x <= len(cnaes):
-            new_url = temp_url.replace("[CNAE]",str(cnaes[x:y]).replace(" ",""))
+            new_url = temp_url.replace("[CNAE]", str(cnaes[x:y]).replace(" ", ""))
             x += 50
             y += 50
             try:
@@ -129,55 +132,43 @@ def collect_data(db, url, cnaes):
                 response.raise_for_status()
                 ibge_data = response.json()
                 for ibge in ibge_data:
-                    #tb_name = tables[ibge['id']]
                     for resultado in ibge['resultados']:
                         cnae_id, cnae_txt = next(iter(resultado['classificacoes'][0]['categoria'].items()))
                         for serie in resultado['series']:
                             for year, data in serie['serie'].items():
-                                if data == '...':
+                                if data in special_data:
                                     data = '0'
-                                main_holder.append([ibge['id'],estado,cnae_id,cnae_txt,year,data])
+                                main_holder.append([ibge['id'], estado, cnae_id, cnae_txt, year, data])
 
             except requests.exceptions.HTTPError as errh:
-                print ("Http Error:",errh)
+                print("Http Error:", errh)
             except requests.exceptions.ConnectionError as errc:
                 print("Error Connecting:", errc)
             except requests.exceptions.Timeout as errt:
                 print("Timeout Error:", errt)
             except requests.exceptions.RequestException as err:
                 print("OOps: Something Else", err)
-
-        print(main_holder)
         store_data(db, main_holder)
+        print(f'Data added into DB for {estado}')
+        '''A break for testing
+        if estado == 'Acre':
+            break
+        '''
 
 
-
-
-
-def store_data(db, data):
+def store_data(db, data_list):
     """
-    Parsing the results retrieved from IBGE API
-    :param url_list: list of URLs to request,
-        supports only one right now.
-    :param dbfile: Location of db file
+    Receives a list which will contain all IBGE data retrieved
+    for a state, properly format it and then use the db Object
+    to add the data into the proper table.
+    :param db: Sqlite DB Object
+    :param data_list: List containing IBGE data
     :return: None
     """
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-
-        ibge_data = response.json()
-        empresas_data = ibge_data[0]['resultados'][0]['series'][0]['serie']
-        pessoal_data = ibge_data[1]['resultados'][0]['series'][0]['serie']
-        salarios_data = ibge_data[2]['resultados'][0]['series'][0]['serie']
-
-        db = DbBackend(dbfile)
-        db.add_data('ibge_empresas', empresas_data)
-        db.add_data('ibge_pessoal', pessoal_data)
-        db.add_data('ibge_salario', salarios_data)
-
-    except requests.exceptions.HTTPError as e:
-        print(e)
+    for data in data_list:
+        table_name = tables[data[0]]
+        table_values = tuple(data[1:])
+        db.add_data(table_name, table_values)
 
 
 class DbBackend:
@@ -194,7 +185,7 @@ class DbBackend:
 
         """
         Table ibge_empresas for variable:
-        2585 Número de empresas e outras organizações
+        2585 Numero de empresas e outras organizacoes
         """
         query_schema = '''
         CREATE TABLE IF NOT EXISTS ibge_empresas (
@@ -210,7 +201,7 @@ class DbBackend:
 
         """
         Table ibge_pessoal_cns for variable:
-        3875 Pessoal ocupado assalariado com nível superior completo
+        3875 Pessoal ocupado assalariado com nivel superior completo
         """
         query_schema = '''
         CREATE TABLE IF NOT EXISTS ibge_pessoal_cns (
@@ -226,7 +217,7 @@ class DbBackend:
 
         """
         Table ibge_pessoal_sns for variable:
-        3876 Pessoal ocupado assalariado sem nível superior completo
+        3876 Pessoal ocupado assalariado sem nivel superior completo
         """
         query_schema = '''
         CREATE TABLE IF NOT EXISTS ibge_pessoal_sns (
@@ -242,7 +233,7 @@ class DbBackend:
 
         """
         Table ibge_salario_cns for variable:
-        3879 Salários e outras remunerações dos empregados com nível superior completo
+        3879 Salarios e outras remuneracoes dos empregados com nivel superior completo
         """
         query_schema = '''
         CREATE TABLE IF NOT EXISTS ibge_salario_cns (
@@ -258,7 +249,7 @@ class DbBackend:
 
         """
         Table ibge_salario_sns for variable:
-        3880 Salários e outras remunerações dos empregados sem nível superior completo
+        3880 Salarios e outras remuneracoes dos empregados sem nivel superior completo
         """
         query_schema = '''
         CREATE TABLE IF NOT EXISTS ibge_salario_sns (
@@ -272,7 +263,6 @@ class DbBackend:
         self.db_cursor.execute(query_schema)
         self.db_con.commit()
 
-
     def add_data(self, table, data):
         """
         Inserts data retrieved by url request into db
@@ -280,16 +270,17 @@ class DbBackend:
         :param data: Values to be added to table
         :return: None
         """
-        for item in data.items():
-            query = f"INSERT OR REPLACE INTO {table} VALUES {item}"
-            self.db_cursor.execute(query)
-
-        self.db_con.commit()
+        query = f"INSERT OR REPLACE INTO {table} VALUES (?,?,?,?,?)"
+        try:
+            self.db_cursor.execute(query, data)
+            self.db_con.commit()
+        except sqlite3.Error as e:
+            print("An error occurred:", e.args[0])
 
     def db_close(self):
         """
         Just to close the DB connection
-        :return: Nothing to return
+        :return: None
         """
         try:
             self.db_con.commit()
@@ -299,12 +290,11 @@ class DbBackend:
             print("An error occurred:", e.args[0])
 
 
-
 def main():
     """
     Main function for running script and parsing arguments
     given to the script
-    :return: None
+    :return: 0 in a successful completion
     """
     parser = argparse.ArgumentParser(description='Process IBGE data.')
     parser.add_argument('--urlfile', dest='urlfile', action='store', required=True,
@@ -326,13 +316,13 @@ def main():
     else:
         raise Exception(f"No File Found: {args.cnaefile}")
 
-    if Path(args.dbname).exists():
-        db = DbBackend(Path(args.dbname))
-    else:
-        raise Exception(f"No File Found: {args.dbname}")
-
+    db = DbBackend(Path(args.dbname))
     collect_data(db, raw_url, raw_cnaes)
+    db.db_close()
+
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    status = main()
+    sys.exit(status)
