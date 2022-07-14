@@ -1,1 +1,1 @@
-https://servicodados.ibge.gov.br/api/v3/agregados/992/periodos/2019/variaveis/2585|3875|3876|3879|3880?localidades=N3[all]&classificacao=12762[all]|319[104029]|2703[117933]
+https://servicodados.ibge.gov.br/api/v3/agregados/992/periodos/2019,2020/variaveis/2585|3875|3876|3879|3880?localidades=N3[all]&classificacao=12762[all]|319[104029]|2703[117933]
