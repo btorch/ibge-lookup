@@ -1,10 +1,21 @@
 PLEASE READ ME FIRST!
 
+This script was created to retrieve information from table 992 for 5 specific "variaves".
+
+- 2585 Numero de empresas e outras organizacoes
+- 3875 Pessoal ocupado assalariado com nivel superior completo
+- 3876 Pessoal ocupado assalariado sem nivel superior completo
+- 3879 Salarios e outras remuneracoes dos empregados com nivel superior completo
+- 3880 Salarios e outras remuneracoes dos empregados sem nivel superior completo
+
+It can be modified to retrieve other information but it's main purpose was for the above only.
+
 The ibge-lookup.py script requires two files, the URL and CNAE files.
 
 The URL file is provided and the only thing that can be changed on that file is the
 comma separated year section. DO NOT change anything else on the URL or the script will
-no longer work. The IBGE API system will fail if you have too many years in the URL, keep it short!
+no longer work unles modifications are done to the script to reflect the changes. The
+IBGE API system will fail if you have too many years in the URL, keep it short!
 
 https://servicodados.ibge.gov.br/.../periodos/2006,2007,2008,2009/..../[104029]|2703[117933]
                                              {^^THIS CAN CHANGE^^}
@@ -17,7 +28,7 @@ number of years and also the number of CNAEs you are trying to retrieve. Do it i
 
 The DBNAME file is optional. If you do not give a path/name it will create one called ibge.db within
 your current directory. If the file already exists the script will only create the tables if they don't already
-exist. It will also not add repeated entries (at least it shouldn't) since we are using INSERT OR REPLACE.
+exist. It will also not add repeated entries since we are using INSERT OR REPLACE and also have UNIQUE constraints.
 
 $ python3.9 ibge-lookup.py --help
 usage: ibge-lookup.py [-h] --urlfile URLFILE --cnaefile CNAEFILE [--dbname DBNAME]
