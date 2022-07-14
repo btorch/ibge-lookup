@@ -26,6 +26,9 @@ import argparse
 from pathlib import Path
 import requests
 import sys
+import os
+from logging.handlers import RotatingFileHandler
+import logging
 
 
 estados = {
@@ -65,6 +68,35 @@ tables = {
     '3879': 'ibge_salario_cns',
     '3880': 'ibge_salario_sns'
 }
+
+
+def set_up_logging(name):
+    """
+    Setting up the logging object
+    :param name: The name for the Logging object
+    :return: The logger object
+    """
+    if 'logs' in os.getcwd():
+        log_path = os.getcwd() + '/logs/ibge.log'
+    else:
+        log_path = os.getcwd() + '/ibge.log'
+
+    with open(log_path, 'a+'):
+        pass
+
+    # Create logger
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    # Create Handler
+    handler = RotatingFileHandler(log_path, maxBytes=5242880, backupCount=5)
+    handler.setLevel(logging.INFO)
+    # Create formatter
+    formatter = logging.Formatter('[%(asctime)s] [%(name)s] [%(levelname)s]: %(message)s')
+    # Add formatter to handler and handler to formatter
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    return logger
 
 
 def get_url(urlfile):
@@ -107,7 +139,7 @@ def get_cnaes(cnaefile):
     return cnaes
 
 
-def collect_data(db, url, cnaes):
+def collect_data(db, url, cnaes, logger):
     """
     Retrieve data from IBGE API endpoint, add it to a
     list holder. Pass the list over to the store function
@@ -115,11 +147,13 @@ def collect_data(db, url, cnaes):
     :param db: Database Object
     :param url: URL Endpoint
     :param cnaes: List of CNAEs
+    :param logger: Logging Object
     :return: None
     """
     special_data = ['...', '..', 'X', '-']
     for estado in estados.keys():
         temp_url = url.replace("LOCATION", str(estados[estado]))
+        logger.info(f"Getting IBGE data for {estado}")
         x = 0
         y = 50
         main_holder = []
@@ -137,18 +171,25 @@ def collect_data(db, url, cnaes):
                         for serie in resultado['series']:
                             for year, data in serie['serie'].items():
                                 if data in special_data:
-                                    data = '0'
+                                    data = '000'
                                 main_holder.append([ibge['id'], estado, cnae_id, cnae_txt, year, data])
 
             except requests.exceptions.HTTPError as errh:
-                print("Http Error:", errh.decode('utf8'))
+                logger.error(f"Http Error: {errh}")
+                print(f"Http Error: {errh}")
             except requests.exceptions.ConnectionError as errc:
-                print("Error Connecting:", errc)
+                logger.error(f"Error Connecting: {errc}")
+                print(f"Error Connecting: {errc}")
             except requests.exceptions.Timeout as errt:
-                print("Timeout Error:", errt)
+                logger.error(f"Timeout Error: {errt}")
+                print(f"Timeout Error: {errt}")
             except requests.exceptions.RequestException as err:
-                print("OOps: Something Else", err)
+                logger.error(f"OOps: Something Else - {err}")
+                print(f"OOps: Something Else - {err}")
+
+        logger.info(f"IBGE data for {estado} collected")
         store_data(db, main_holder)
+        logger.info(f"IBGE data for {estado} stored into SQLite")
         print(f'Data added into DB for {estado}')
         '''A break for testing
         if estado == 'Acre':
@@ -193,7 +234,8 @@ class DbBackend:
             cnae_id INTEGER,
             cnae TEXT,
             periodo INTEGER,
-            numero_empresas INTEGER
+            numero_empresas INTEGER,
+            UNIQUE(localidade,cnae_id,periodo)
         )
         '''
         self.db_cursor.execute(query_schema)
@@ -209,7 +251,8 @@ class DbBackend:
             cnae_id INTEGER,
             cnae TEXT,   
             periodo INTEGER,
-            pessoal_assalariado_cns INTEGER
+            pessoal_assalariado_cns INTEGER,
+            UNIQUE(localidade,cnae_id,periodo)
         )
         '''
         self.db_cursor.execute(query_schema)
@@ -225,7 +268,8 @@ class DbBackend:
             cnae_id INTEGER,
             cnae TEXT,
             periodo INTEGER,
-            pessoal_assalariado_sns INTEGER
+            pessoal_assalariado_sns INTEGER,
+            UNIQUE(localidade,cnae_id,periodo)
         )
         '''
         self.db_cursor.execute(query_schema)
@@ -241,7 +285,8 @@ class DbBackend:
             cnae_id INTEGER,
             cnae TEXT,                 
             periodo INTEGER,
-            valor_salarial_cns NUMERIC
+            valor_salarial_cns NUMERIC,
+            UNIQUE(localidade,cnae_id,periodo)
         )
         '''
         self.db_cursor.execute(query_schema)
@@ -257,7 +302,8 @@ class DbBackend:
             cnae_id INTEGER,
             cnae TEXT,                 
             periodo INTEGER,
-            valor_salarial_sns NUMERIC
+            valor_salarial_sns NUMERIC,
+            UNIQUE(localidade,cnae_id,periodo)
         )
         '''
         self.db_cursor.execute(query_schema)
@@ -305,19 +351,27 @@ def main():
                         help='Name of SQLite file', default='ibge.db')
 
     args = parser.parse_args()
+    logger = set_up_logging('ibge-lookup')
+    logger.info("Starting up")
 
     if Path(args.urlfile).exists():
         raw_url = get_url(Path(args.urlfile))
+        logger.info("Reading URL file completed")
     else:
-        raise Exception(f"No File Found: {args.urlfile}")
+        logger.error("No URL file found: {0}".format({args.urlfile}))
+        raise Exception(f"No URL File Found: {args.urlfile}")
 
     if Path(args.cnaefile).exists():
         raw_cnaes = get_cnaes(Path(args.cnaefile))
+        logger.info("Reading CNAE file completed")
     else:
-        raise Exception(f"No File Found: {args.cnaefile}")
+        logger.error("No CNAE file found: {0}".format({args.cnaefile}))
+        raise Exception(f"No CNAE File Found: {args.cnaefile}")
 
     db = DbBackend(Path(args.dbname))
-    collect_data(db, raw_url, raw_cnaes)
+    logger.info("Setting up SQLite tables and handler completed")
+    collect_data(db, raw_url, raw_cnaes, logger)
+    logger.info("Closing SQLite connection")
     db.db_close()
 
     return 0
