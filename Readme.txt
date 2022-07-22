@@ -30,13 +30,43 @@ The DBNAME file is optional. If you do not give a path/name it will create one c
 your current directory. If the file already exists the script will only create the tables if they don't already
 exist. It will also not add repeated entries since we are using INSERT OR REPLACE and also have UNIQUE constraints.
 
+Configuration file:
+Niveis Geograficos permitidos
+O Nivel N2 pode ter  1 ou mais separados por virgulas
+O Nivel N3 pode ser todos os estados como abaixo ou apenas alguns
+Nivel = N1 com Localidade all (Brasil inteiro)
+Nivel = N2 com localidades 1 para Norte, 2 para Nordeste, 3 para Sudeste, 4 para Sul, 5 para Centro-Oeste
+Nivel = N3 com localidades {"Rondonia":11,"Acre":12,"Amazonas":13,"Roraima":14,"Para":15,
+                               "Amapa":16,"Tocantins":17,"Maranhao":21,"Piaui":22,"Ceara":23,
+                               "Rio Grande do Norte":24,"Paraiba":25,"Pernambuco":26,"Alagoas":27,
+                               "Sergipe":28,"Bahia":29,"Minas Gerais":31,"Espirito Santo":32,
+                               "Rio de Janeiro":33,"Sao Paulo":35,"Parana":41,"Santa Catarina":42,
+                               "Rio Grande do Sul":43,"Mato Grosso do Sul":50,"Mato Grosso":51,
+                               "Goias":52,"Distrito Federal":53}
+Exemplo Brasil:
+[geo]
+nivel = N1
+localidades = all
+
+Exemplo Regioes:
+[geo]
+nivel = N2
+localidades = 1,2
+
+Exemplo Estados:
+[geo]
+nivel = N3
+localidades = {"Rondonia":11,"Acre":12,"Amazonas":13,"Roraima":14}
+
+
 $ python3.9 ibge-lookup.py --help
-usage: ibge-lookup.py [-h] --urlfile URLFILE --cnaefile CNAEFILE [--dbname DBNAME]
+usage: ibge-lookup.py [-h] --conf CONFIGFILE --urlfile URLFILE --cnaefile CNAEFILE [--dbname DBNAME]
 
 Process IBGE data.
 
 optional arguments:
   -h, --help           show this help message and exit
+  --conf CONFIGGILE    Cofiguration file to be read
   --urlfile URLFILE    File containing the url for the requests [Required]
   --cnaefile CNAEFILE  File containing CNAE IDs [Required]
   --dbname DBNAME      Name of SQLite file
