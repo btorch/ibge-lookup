@@ -28,6 +28,7 @@ import requests
 import sys
 import os
 from logging.handlers import RotatingFileHandler
+from configparser import ConfigParser, ExtendedInterpolation
 import logging
 
 
@@ -68,6 +69,48 @@ tables = {
     '3879': 'ibge_salario_cns',
     '3880': 'ibge_salario_sns'
 }
+
+
+def get_config(configfile, logger):
+    """
+    Read configuration file and return a dict with the contents
+    :param configfile: The full path configuration file
+    :param logger: The logging object
+    :return: Dictionary with the configuration values
+    """
+    results = {}
+    parser = ConfigParser(allow_no_value=False, interpolation=ExtendedInterpolation())
+
+    if not parser.read(configfile):
+        logger.error(f"Unable to read the config file: {configfile}")
+        raise Exception(f"Unable to read the config file: {configfile}")
+
+    # Section: ibge
+    if parser.has_section('ibge'):
+        conf = dict(parser.items('ibge'))
+        results['agregado'] = conf.get('agregado', '992')
+        results['periodos'] = conf.get('periodos', '2020')
+        results['variaveis'] = conf.get('variaveis', '2585,3875,3876,3879,3880')
+
+    #  Section: cnae
+    if parser.has_section('cnae'):
+        conf = dict(parser.items('cnae'))
+        results['cnae_aquivo'] = conf.get('cnae_aquivo', 'cnae.txt')
+
+    # Section: geo
+    if parser.has_section('geo'):
+        conf = dict(parser.items('geo'))
+        results['nivel'] = conf.get('nivel', 'N1')
+        results['localidades'] = conf.get('localidades', 'all')
+
+    # Section: api_url
+    if parser.has_section('api_url'):
+        conf = dict(parser.items('api_url'))
+        results['url'] = conf.get('url')
+
+    logger.info("All section of the configuration file read")
+
+    return results
 
 
 def set_up_logging(name):
@@ -139,7 +182,7 @@ def get_cnaes(cnaefile):
     return cnaes
 
 
-def collect_data(db, url, cnaes, logger):
+def collect_data(db, url, cnaes, estados, logger):
     """
     Retrieve data from IBGE API endpoint, add it to a
     list holder. Pass the list over to the store function
@@ -343,30 +386,45 @@ def main():
     :return: 0 in a successful completion
     """
     parser = argparse.ArgumentParser(description='Process IBGE data.')
-    parser.add_argument('--urlfile', dest='urlfile', action='store', required=True,
-                        help='File containing the url for the requests [Required]', default='url.txt')
-    parser.add_argument('--cnaefile', dest='cnaefile', action='store', required=True,
-                        help='File containing CNAE IDs [Required]', default='cnae.txt')
+    parser.add_argument('--urlfile', dest='urlfile', action='store',
+                        help='File containing the url for the requests', default='url.txt')
+    parser.add_argument('--cnaefile', dest='cnaefile', action='store',
+                        help='File containing CNAE IDs', default='cnae.txt')
     parser.add_argument('--dbname', dest='dbname', action='store',
                         help='Name of SQLite file', default='ibge.db')
+    parser.add_argument('--conf', dest='configfile', action='store',
+                        help='Configuration file', default='ibge-lookup.cfg')
 
     args = parser.parse_args()
     logger = set_up_logging('ibge-lookup')
     logger.info("Starting up")
 
-    if Path(args.urlfile).exists():
-        raw_url = get_url(Path(args.urlfile))
-        logger.info("Reading URL file completed")
+    if Path(args.configfile).exists():
+        config = get_config(Path(args.configfile), logger)
+        logger.info("Reading Configuration file completed")
     else:
-        logger.error("No URL file found: {0}".format({args.urlfile}))
-        raise Exception(f"No URL File Found: {args.urlfile}")
+        logger.error("No Config file found: {0}".format({args.configfile}))
+        raise Exception(f"No Config File Found: {args.configfile}")
 
-    if Path(args.cnaefile).exists():
-        raw_cnaes = get_cnaes(Path(args.cnaefile))
+    if config['url']:
+        if 'N2' in config['nivel']:
+            raw_url = config['url'].replace("N2[all]", "N2[LOCATION]").replace("12762[all]", "12762[CNAE]")
+        elif 'N3' in config['nivel']:
+            raw_url = config['url'].replace("N3[all]", "N3[LOCATION]").replace("12762[all]", "12762[CNAE]")
+        else:
+            raw_url = config['url'].replace("N3[all]", "N3[LOCATION]").replace("12762[all]", "12762[CNAE]")
+
+        logger.info("Setting up URL completed")
+    else:
+        logger.error(f"Could not setup the URL properly: {config['url']}")
+        raise Exception(f"Could not setup the URL properly: {config['url']}")
+
+    if Path(config['cnae_aquivo']).exists():
+        raw_cnaes = get_cnaes(config['cnae_aquivo'])
         logger.info("Reading CNAE file completed")
     else:
-        logger.error("No CNAE file found: {0}".format({args.cnaefile}))
-        raise Exception(f"No CNAE File Found: {args.cnaefile}")
+        logger.error(f"No CNAE file found: {config['cnae_aquivo']}")
+        raise Exception(f"No CNAE File Found: {config['cnae_aquivo']}")
 
     db = DbBackend(Path(args.dbname))
     logger.info("Setting up SQLite tables and handler completed")
