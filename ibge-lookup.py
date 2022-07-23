@@ -26,6 +26,7 @@ import argparse
 from pathlib import Path
 import requests
 import sys
+import json
 import os
 from logging.handlers import RotatingFileHandler
 from configparser import ConfigParser, ExtendedInterpolation
@@ -62,12 +63,20 @@ estados = {
     "Distrito Federal": 53
 }
 
+regioes = {
+    "Norte": 1,
+    "Nordeste": 2,
+    "Sudeste": 3,
+    "Sul": 4,
+    "Centro-Oeste": 5
+}
+
 tables = {
-    '2585': 'ibge_empresas',
-    '3875': 'ibge_pessoal_cns',
-    '3876': 'ibge_pessoal_sns',
-    '3879': 'ibge_salario_cns',
-    '3880': 'ibge_salario_sns'
+    "2585": "ibge_empresas",
+    "3875": "ibge_pessoal_cns",
+    "3876": "ibge_pessoal_sns",
+    "3879": "ibge_salario_cns",
+    "3880": "ibge_salario_sns"
 }
 
 
@@ -93,15 +102,21 @@ def get_config(configfile, logger):
         results['variaveis'] = conf.get('variaveis', '2585,3875,3876,3879,3880')
 
     #  Section: cnae
-    if parser.has_section('cnae'):
-        conf = dict(parser.items('cnae'))
-        results['cnae_aquivo'] = conf.get('cnae_aquivo', 'cnae.txt')
+    if parser.has_section('cnaes'):
+        conf = dict(parser.items('cnaes'))
+        results['cnae_arquivo'] = conf.get('cnae_arquivo', 'cnae.txt')
 
     # Section: geo
     if parser.has_section('geo'):
         conf = dict(parser.items('geo'))
         results['nivel'] = conf.get('nivel', 'N1')
-        results['localidades'] = conf.get('localidades', 'all')
+        results['localidades'] = json.loads(conf.get('localidades', '{}'))
+        if results['nivel'] == 'N1' and results['localidades'] == {}:
+            results['localidades'] = {'Brasil': 'all'}
+        if results['nivel'] == 'N2' and results['localidades'] == {}:
+            results['localidades'] = dict(regioes)
+        if results['nivel'] == 'N3' and results['localidades'] == {}:
+            results['localidades'] = dict(estados)
 
     # Section: api_url
     if parser.has_section('api_url'):
@@ -142,6 +157,7 @@ def set_up_logging(name):
     return logger
 
 
+# DEPRECATED - to be removed
 def get_url(urlfile):
     """
     Read the first line from the file which contains the API URL generated
@@ -182,7 +198,7 @@ def get_cnaes(cnaefile):
     return cnaes
 
 
-def collect_data(db, url, cnaes, estados, logger):
+def collect_data(db, url, cnaes, localidades, logger):
     """
     Retrieve data from IBGE API endpoint, add it to a
     list holder. Pass the list over to the store function
@@ -190,13 +206,14 @@ def collect_data(db, url, cnaes, estados, logger):
     :param db: Database Object
     :param url: URL Endpoint
     :param cnaes: List of CNAEs
+    :param localidades: Dictionary with the desired states, regions or entire Brasil
     :param logger: Logging Object
     :return: None
     """
     special_data = ['...', '..', 'X', '-']
-    for estado in estados.keys():
-        temp_url = url.replace("LOCATION", str(estados[estado]))
-        logger.info(f"Getting IBGE data for {estado}")
+    for localidade in localidades.keys():
+        temp_url = url.replace("LOCATION", str(localidades[localidade]))
+        logger.info(f"Getting IBGE data for {localidade}")
         x = 0
         y = 50
         main_holder = []
@@ -215,7 +232,7 @@ def collect_data(db, url, cnaes, estados, logger):
                             for year, data in serie['serie'].items():
                                 if data in special_data:
                                     data = '000'
-                                main_holder.append([ibge['id'], estado, cnae_id, cnae_txt, year, data])
+                                main_holder.append([ibge['id'], localidade, cnae_id, cnae_txt, year, data])
 
             except requests.exceptions.HTTPError as errh:
                 logger.error(f"Http Error: {errh}")
@@ -230,13 +247,13 @@ def collect_data(db, url, cnaes, estados, logger):
                 logger.error(f"OOps: Something Else - {err}")
                 print(f"OOps: Something Else - {err}")
 
-        logger.info(f"IBGE data for {estado} collected")
+        logger.info(f"IBGE data for {localidade} collected")
         store_data(db, main_holder)
-        logger.info(f"IBGE data for {estado} stored into SQLite")
-        print(f'Data added into DB for {estado}')
-        '''A break for testing
-        if estado == 'Acre':
-            break
+        logger.info(f"IBGE data for {localidade} stored into SQLite")
+        '''
+        For Testing
+        print(f'Data added into DB for {localidade}')
+        if estado == 'Acre': break
         '''
 
 
@@ -386,10 +403,6 @@ def main():
     :return: 0 in a successful completion
     """
     parser = argparse.ArgumentParser(description='Process IBGE data.')
-    parser.add_argument('--urlfile', dest='urlfile', action='store',
-                        help='File containing the url for the requests', default='url.txt')
-    parser.add_argument('--cnaefile', dest='cnaefile', action='store',
-                        help='File containing CNAE IDs', default='cnae.txt')
     parser.add_argument('--dbname', dest='dbname', action='store',
                         help='Name of SQLite file', default='ibge.db')
     parser.add_argument('--conf', dest='configfile', action='store',
@@ -412,15 +425,14 @@ def main():
         elif 'N3' in config['nivel']:
             raw_url = config['url'].replace("N3[all]", "N3[LOCATION]").replace("12762[all]", "12762[CNAE]")
         else:
-            raw_url = config['url'].replace("N3[all]", "N3[LOCATION]").replace("12762[all]", "12762[CNAE]")
-
+            raw_url = config['url'].replace("12762[all]", "12762[CNAE]")
         logger.info("Setting up URL completed")
     else:
         logger.error(f"Could not setup the URL properly: {config['url']}")
         raise Exception(f"Could not setup the URL properly: {config['url']}")
 
-    if Path(config['cnae_aquivo']).exists():
-        raw_cnaes = get_cnaes(config['cnae_aquivo'])
+    if Path(config['cnae_arquivo']).exists():
+        raw_cnaes = get_cnaes(config['cnae_arquivo'])
         logger.info("Reading CNAE file completed")
     else:
         logger.error(f"No CNAE file found: {config['cnae_aquivo']}")
@@ -428,7 +440,7 @@ def main():
 
     db = DbBackend(Path(args.dbname))
     logger.info("Setting up SQLite tables and handler completed")
-    collect_data(db, raw_url, raw_cnaes, logger)
+    collect_data(db, raw_url, raw_cnaes, dict(config['localidades']), logger)
     logger.info("Closing SQLite connection")
     db.db_close()
 
